@@ -1,5 +1,5 @@
 WORKER ?= training-worker
-VIP_IP ?= 10.244.255.251
+VIP_IP ?= 10.41.255.251
 BPF_PIN_DIR ?= /sys/fs/bpf/lb_prog
 
 build-ebpf:
@@ -7,7 +7,7 @@ build-ebpf:
 	if [ -n "$$BACKEND_IP" ]; then \
 		BACKEND_HEX=$$(printf '0x%02x%02x%02x%02x' $$(echo $$BACKEND_IP | tr '.' ' ')); \
 	else \
-		BACKEND_IP="10.244.0.3"; \
+		BACKEND_IP="10.41.0.3"; \
 		BACKEND_HEX="0x0af40003"; \
 	fi; \
 	echo "Building xdp_lb_kern.o with backend $$BACKEND_IP ($$BACKEND_HEX)"; \

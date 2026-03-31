@@ -2,8 +2,8 @@
 set -euo pipefail
 
 BRIDGE="${BRIDGE:-cni0}"
-POD_CIDR="${POD_CIDR:-10.244.0.0/16}"
-GW_IP="${GW_IP:-10.244.0.1}"
+POD_CIDR="${POD_CIDR:-10.41.0.0/16}"
+GW_IP="${GW_IP:-10.41.0.1}"
 GW_PREFIX="${GW_PREFIX:-${POD_CIDR#*/}}" # trims off the CIDR portion
 
 for node in $(kubectl get nodes --no-headers | awk '{print $1}'); do

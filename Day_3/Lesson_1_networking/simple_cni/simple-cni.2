@@ -57,10 +57,16 @@ if [[ "$COMMAND" == "ADD" ]]; then
   nsenter --net="$NETNS" ip route add default via "$GW"
 
   # This returns JSON in the CNI spec format to stdout
+  echo "~~~~~~~"
+  echo "$IPAM_RESULT" | jq --arg ifname "$IFNAME" --arg netns "$CNI_NETNS" '
+    .interfaces=[{name:$ifname,sandbox:$netns}] |
+    .ips |= map(. + {version:"4", interface:0}) 
+  ' > /tmp/cni_result
   echo "$IPAM_RESULT" | jq --arg ifname "$IFNAME" --arg netns "$CNI_NETNS" '
     .interfaces=[{name:$ifname,sandbox:$netns}] |
     .ips |= map(. + {version:"4", interface:0}) 
   ' >&3
+  echo "~~~~~~~"
 
 elif [[ "$COMMAND" == "DEL" ]]; then
   ip link del "lxc${CONTAINERID:0:5}" 2>/dev/null ||:
