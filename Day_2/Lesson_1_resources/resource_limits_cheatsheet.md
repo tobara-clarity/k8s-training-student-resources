@@ -26,3 +26,27 @@ kubectl get quota
 # See why a Pod died
 kubectl describe pod <name> | grep -A 5 "Last State"
 ```
+
+1. QoS Class Summary
+
+| Class | Rule | Eviction Priority|
+| --- | --- | --- |
+| Guaranteed | Requests == Limits (CPU & Mem) | Lowest (Safe) |
+| Burstable | Requests < Limits (or partial) | Medium |
+| BestEffort | No Requests / No Limits | Highest (First to die) |
+
+2. How to Check a Pod's QoS
+
+```sh
+# Detailed view (look for qosClass at the bottom)
+kubectl describe pod <pod-name>
+
+# Quick view (using jsonpath)
+kubectl get pod <pod-name> -o jsonpath='{.status.qosClass}'
+```
+
+
+3. Pro-Tip for Production
+
+Always aim for **Guaranteed** for critical infrastructure (like databases or core APIs) and **Burstable** for general web traffic.
+Avoid **BestEffort** in production unless the task is truly unimportant (like a background cleanup script).

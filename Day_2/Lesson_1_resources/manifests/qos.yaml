@@ -1,0 +1,41 @@
+# 1. BestEffort (No resources defined)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qos-best-effort
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+---
+# 2. Burstable (Request is lower than Limit)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qos-burstable
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+      resources:
+        requests:
+          memory: "64Mi"
+        limits:
+          memory: "128Mi"
+---
+# 3. Guaranteed (Request EQUALS Limit)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: qos-guaranteed
+spec:
+  containers:
+    - name: nginx
+      image: nginx
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "100m"
+          memory: "128Mi"
