@@ -6,8 +6,8 @@ set -e
 echo "--- 1. Patching Longhorn for 2-Node Environment ---"
 # Sets replica count to 2 and allows over-provisioning for KiND/Lab environments
 kubectl -n longhorn-system patch settings.longhorn.io default-replica-count --type merge -p '{"value": "2"}'
-kubectl -n longhorn-system patch settings.longhorn.io storage-over-provisioning-interface --type merge -p '{"value": "200"}'
-echo "✅ Longhorn settings updated."
+kubectl -n longhorn-system patch settings.longhorn.io storage-over-provisioning-percentage --type merge -p '{"value": "200"}'
+echo " Longhorn settings updated."
 
 echo "--- 2. Creating Persistent Volume Claim (PVC) ---"
 cat <<EOF | kubectl apply -f -

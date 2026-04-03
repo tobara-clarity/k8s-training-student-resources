@@ -53,5 +53,4 @@ echo "Configuration files and cache cleared."
 
 echo "--------------------------------------------------------"
 echo "RESETS COMPLETE"
-echo "The systemd 'Socket' error should no longer occur on reinstall."
 echo "--------------------------------------------------------"
