@@ -12,25 +12,30 @@ fi
 
 echo "--- 2. Cleaning up kubectl ---"
 if command -v kubectl &> /dev/null; then
-    # Try snap first, then manual binary
     sudo snap remove kubectl || true
     sudo rm -f /usr/local/bin/kubectl || true
     rm -rf ~/.kube
     echo "kubectl removed and config cleared."
 fi
 
-echo "--- 3. Wiping Docker Environment ---"
-if command -v docker &> /dev/null; then
+echo "--- 3. Wiping Docker Environment & Systemd States ---"
+if command -v docker &> /dev/null || [ -d /var/lib/docker ]; then
     echo "Stopping all containers..."
     docker stop $(docker ps -aq) 2>/dev/null || true
-    docker system prune -a --volumes -f || true
+    
+    echo "Resetting systemd units (Fixes Socket Activation errors)..."
+    sudo systemctl stop docker.service docker.socket 2>/dev/null || true
+    sudo systemctl unmask docker.service docker.socket 2>/dev/null || true
     
     echo "Uninstalling Docker packages..."
     sudo apt purge -y docker.io docker-doc docker-compose podman-docker containerd runc || true
     sudo apt autoremove -y || true
+    
+    # Clean up leftovers that apt purge might miss
     sudo rm -rf /var/lib/docker
     sudo rm -rf /etc/docker
-    echo "Docker wiped."
+    sudo rm -f /var/run/docker.sock
+    echo "Docker wiped and systemd units unmasked."
 fi
 
 echo "--- 4. Removing Longhorn & Storage Dependencies ---"
@@ -41,12 +46,12 @@ sudo rm -rf /var/lib/longhorn
 echo "Storage dependencies removed."
 
 echo "--- 5. Final Filesystem Cleanup ---"
-# Remove any leftover YAML configs or local scripts
-rm -f kind-config.yaml installs.sh setup-longhorn-cluster.sh verify-longhorn.sh reset-ubuntu.sh
+# We keep the step scripts so you don't have to recreate them!
+rm -f kind-config.yaml
 sudo apt clean
-echo "Local scripts and cache cleared."
+echo "Configuration files and cache cleared."
 
 echo "--------------------------------------------------------"
 echo "RESETS COMPLETE"
-echo "Your Ubuntu VM is back to a (mostly) baseline state."
+echo "The systemd 'Socket' error should no longer occur on reinstall."
 echo "--------------------------------------------------------"
