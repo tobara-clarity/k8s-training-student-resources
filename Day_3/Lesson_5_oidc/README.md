@@ -13,9 +13,7 @@ Creates the Keycloak client manually, then wire the generated client secret into
 
 This lab always uses `nip.io`.
 
-Set `PUBLIC_IP` at the top of [oidc/Makefile](/home/user/k8s_training/oidc/Makefile#L8) before you start:
-
-* Leave it as `127.0.0.1` for local use on the same machine
+* Leave it as `127.0.0.1` for local use on the same machine (requires a browser or port forwarder)
 * Change it to your server's public IP if using a browser external to the server
 
 With the default `PUBLIC_IP=127.0.0.1`, the local URLs are:
@@ -26,17 +24,21 @@ With the default `PUBLIC_IP=127.0.0.1`, the local URLs are:
 After updating `PUBLIC_IP`, print the exact URLs the lab will use with:
 
 ```bash
+export PUBLIC_IP=1.2.3.4
 make urls
 ```
+
+If you change `PUBLIC_IP` after the lab is already deployed, rerun `make deploy` and `make deploy-app` so Keycloak, the Gateway routes, and `oauth2-proxy` are all regenerated with the new `nip.io` hostnames.
 
 ## Deploy The Base Lab
 
 ```bash
-cd oidc
 make deploy
 ```
 
 That creates the `kind` cluster, installs the Gateway API CRDs, installs Cilium with Gateway API enabled, and deploys Keycloak plus the upstream echo app.
+
+When `PUBLIC_IP` points at a public EC2 address, `make deploy` also relaxes Keycloak's realm SSL requirement for this training setup. Without that, Keycloak allows plain HTTP for localhost-style access but shows `HTTPS required` for external browser access.
 
 The seeded credentials are:
 
@@ -61,6 +63,8 @@ The seeded credentials are:
    * Web origins: `APP_URL`
 5. Save the client and copy the generated client secret from the `Credentials` tab.
 
+If you later change `PUBLIC_IP`, come back and update these client settings to the new values from `make urls`.
+
 ## Configure And Launch The Protected App
 
 ```bash
@@ -75,4 +79,5 @@ You should be redirected to Keycloak, log in as `student / studentpassword`, and
 ## Notes
 
 * This lab intentionally stays on HTTP so the flow is easier to understand locally.
+* If you already deployed before this change and see `HTTPS required` on EC2, run `make relax-http-realms` once against the existing cluster.
 * This lab uses port `8080` because Cilium Gateway host-network mode recommends ports above `1023` unless you explicitly grant privileged bind capabilities to Envoy.

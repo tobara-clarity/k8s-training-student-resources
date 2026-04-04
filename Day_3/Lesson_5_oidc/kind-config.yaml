@@ -5,6 +5,6 @@ networking:
 nodes:
   - role: control-plane
     extraPortMappings:
-      - containerPort: ${PORT}
-        hostPort: ${PORT}
+      - containerPort: 8080
+        hostPort: 8080
         protocol: TCP

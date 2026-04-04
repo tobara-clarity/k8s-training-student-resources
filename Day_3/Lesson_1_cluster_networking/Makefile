@@ -3,7 +3,7 @@ single-node-kind-cluster:
 	kubectl apply -f deployment/netshoot.yaml
 
 single-node-kind-no-kubeproxy:
-	kind create cluster --config=single-node-kind-config.yaml --name training
+	kind create cluster --config=single-node-kind-no-kubeproxy-config.yaml --name training
 	kubectl apply -f deployment/netshoot.yaml
 
 load-simple-cni-1:
@@ -15,15 +15,18 @@ setup-cni-static:
 load-simple-cni-2: setup-cni-static
 	bash simple_cni/load-cni-to-nodes.sh 2
 
-cilium-kube-proxy-replacement: single-node-kind-cluster
+cilium-kube-proxy-replacement: single-node-kind-no-kubeproxy
 	helm repo add cilium https://helm.cilium.io/
 	helm repo update cilium
 	helm upgrade -i cilium cilium/cilium --version 1.19.0 \
 		--namespace kube-system \
 		--set kubeProxyReplacement=true \
-		--set policyEnforcementMode=always \
 		--set k8sServiceHost=training-control-plane \
 		--set k8sServicePort=6443
+	kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
+	kubectl rollout status deployment/coredns -n kube-system --timeout=300s
+
+cilium: cilium-kube-proxy-replacement
 
 load-ebpf-utilities:
 	docker exec training-worker apt update

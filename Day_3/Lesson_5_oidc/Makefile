@@ -1,4 +1,4 @@
-.PHONY: cluster gateway-api-crds cilium namespace deploy-base deploy configure-client deploy-app status validate urls clean
+.PHONY: cluster gateway-api-crds cilium namespace deploy-base deploy configure-client deploy-app relax-http-realms status validate urls clean
 
 CLUSTER_NAME ?= oidc-lab
 NAMESPACE ?= oidc
@@ -6,7 +6,6 @@ REALM ?= training
 CLIENT_ID ?= training-app
 CLIENT_SECRET ?=
 PUBLIC_IP ?= 127.0.0.1
-PORT ?= 8080
 CILIUM_VERSION ?= 1.19.2
 GATEWAY_API_VERSION ?= v1.2.0
 GATEWAY_API_MANIFEST ?= https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/standard-install.yaml
@@ -14,26 +13,14 @@ GATEWAY_API_MANIFEST ?= https://github.com/kubernetes-sigs/gateway-api/releases/
 KEYCLOAK_HOST ?= keycloak.$(PUBLIC_IP).nip.io
 APP_HOST ?= app.$(PUBLIC_IP).nip.io
 
-KEYCLOAK_URL ?= http://$(KEYCLOAK_HOST):$(PORT)
-APP_URL ?= http://$(APP_HOST):$(PORT)
+KEYCLOAK_URL ?= http://$(KEYCLOAK_HOST):8080
+APP_URL ?= http://$(APP_HOST):8080
 REDIRECT_URI ?= $(APP_URL)/oauth2/callback
 POST_LOGOUT_REDIRECT_URI ?= $(APP_URL)/*
-RENDER_ENV = KEYCLOAK_HOST='$(KEYCLOAK_HOST)' APP_HOST='$(APP_HOST)' PORT='$(PORT)' KEYCLOAK_URL='$(KEYCLOAK_URL)' APP_URL='$(APP_URL)' REDIRECT_URI='$(REDIRECT_URI)' POST_LOGOUT_REDIRECT_URI='$(POST_LOGOUT_REDIRECT_URI)'
+RENDER_ENV = KEYCLOAK_HOST='$(KEYCLOAK_HOST)' APP_HOST='$(APP_HOST)' KEYCLOAK_URL='$(KEYCLOAK_URL)' APP_URL='$(APP_URL)' REDIRECT_URI='$(REDIRECT_URI)' POST_LOGOUT_REDIRECT_URI='$(POST_LOGOUT_REDIRECT_URI)'
 
 cluster:
-	@if kind get clusters | grep -qx '$(CLUSTER_NAME)'; then \
-		if kubectl --context kind-$(CLUSTER_NAME) get daemonset/kindnet -n kube-system >/dev/null 2>&1; then \
-			echo "kind cluster $(CLUSTER_NAME) already exists with the default kind CNI."; \
-			echo "Run 'make clean' once, then rerun 'make deploy' so the cluster is recreated for Cilium."; \
-			exit 1; \
-		fi; \
-		echo "kind cluster $(CLUSTER_NAME) already exists"; \
-	else \
-		tmp_file=$$(mktemp); \
-		$(RENDER_ENV) envsubst < kind-config.yaml > "$$tmp_file"; \
-		kind create cluster --config "$$tmp_file" --name $(CLUSTER_NAME); \
-		rm -f "$$tmp_file"; \
-	fi
+	kind create cluster --config "$$tmp_file" --name trainting
 
 gateway-api-crds:
 	kubectl apply --server-side -f $(GATEWAY_API_MANIFEST)
@@ -63,6 +50,7 @@ deploy-base: namespace
 	kubectl apply -f deployment/echo-app.yaml
 	$(RENDER_ENV) envsubst < deployment/gateway.yaml | kubectl apply -f -
 	kubectl rollout status deployment/keycloak -n $(NAMESPACE) --timeout=300s
+	$(MAKE) relax-http-realms
 	kubectl rollout status deployment/oidc-echo -n $(NAMESPACE) --timeout=180s
 	kubectl wait -n $(NAMESPACE) --for=condition=Accepted=true gateway/oidc-gateway --timeout=180s
 	kubectl wait -n $(NAMESPACE) \
@@ -92,22 +80,11 @@ deploy-app:
 		--timeout=180s
 
 urls:
+	@echo "APP_URL=$(APP_URL)"
 	@echo "PUBLIC_IP=$(PUBLIC_IP)"
 	@echo "KEYCLOAK_URL=$(KEYCLOAK_URL)"
-	@echo "APP_URL=$(APP_URL)"
 	@echo "REDIRECT_URI=$(REDIRECT_URI)"
 	@echo "POST_LOGOUT_REDIRECT_URI=$(POST_LOGOUT_REDIRECT_URI)"
-
-status:
-	kubectl get gatewayclass
-	kubectl get pods,svc,gateway,httproute -n $(NAMESPACE)
-
-validate:
-	kubectl apply --dry-run=client -f deployment/namespace.yaml
-	$(RENDER_ENV) envsubst < deployment/keycloak.yaml | kubectl apply --dry-run=client -f -
-	kubectl apply --dry-run=client -f deployment/echo-app.yaml
-	$(RENDER_ENV) envsubst < deployment/gateway.yaml | kubectl apply --dry-run=server -f -
-	$(RENDER_ENV) envsubst < deployment/oauth2-proxy.yaml | kubectl apply --dry-run=server -f -
 
 clean:
 	kind delete cluster --name $(CLUSTER_NAME) || :
