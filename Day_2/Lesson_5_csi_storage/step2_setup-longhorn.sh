@@ -43,19 +43,37 @@ echo "--- 1. Creating KiND 2-Node Configuration (1 control-plane, 1 worker) ---"
 
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-
 cat <<'EOF' > kind-config.yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
 - role: worker
+  extraMounts:
+  - hostPath: /run/iscsid.gs
+    containerPath: /run/iscsid.gs
+  - hostPath: /var/lib/iscsi
+    containerPath: /var/lib/iscsi
+  - hostPath: /boot
+    containerPath: /boot
+  - hostPath: /lib/modules
+    containerPath: /lib/modules
 
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
     SystemdCgroup = true
 EOF
+
+
+
+
+
+
+
+
+
+
 
 # -------------------------
 # 2) Create the kind cluster

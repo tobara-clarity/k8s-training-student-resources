@@ -181,6 +181,9 @@ if [ "$POD_RC" -ne 0 ]; then
   exit 1
 fi
 
+kubectl patch storageclass standard -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}'
+
+
 echo "--------------------------------------------------------"
 echo "Your PVC is BOUND and your Pod is READY."
 kubectl -n "$PVC_NS" get pvc "$PVC_NAME" -o wide
