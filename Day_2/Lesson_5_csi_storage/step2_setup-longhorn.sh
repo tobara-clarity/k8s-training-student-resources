@@ -56,8 +56,7 @@ nodes:
     containerPath: /var/lib/iscsi
   - hostPath: /boot
     containerPath: /boot
-  - hostPath: /lib/modules
-    containerPath: /lib/modules
+  # REMOVED /lib/modules as KiND provides it by default
 
 containerdConfigPatches:
 - |-
