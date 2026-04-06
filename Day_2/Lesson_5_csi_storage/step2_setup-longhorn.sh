@@ -50,13 +50,14 @@ nodes:
 - role: control-plane
 - role: worker
   extraMounts:
-  - hostPath: /run/iscsid.gs
-    containerPath: /run/iscsid.gs
+  - hostPath: /run
+    containerPath: /run
   - hostPath: /var/lib/iscsi
     containerPath: /var/lib/iscsi
+  - hostPath: /dev
+    containerPath: /dev
   - hostPath: /boot
     containerPath: /boot
-# Note: /lib/modules is handled by kind automatically
 
 containerdConfigPatches:
 - |-
@@ -64,15 +65,7 @@ containerdConfigPatches:
     SystemdCgroup = true
 EOF
 
-
-
-
-
-
-
-
-
-
+sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
 # -------------------------
 # 2) Create the kind cluster
@@ -106,6 +99,10 @@ sudo systemctl enable --now iscsid || true
 # 3b) iSCSI initiator inside kind nodes
 # -------------------------
 echo "--- 3b. Install + start iSCSI initiator in kind node containers (FIX for Longhorn) ---"
+
+sudo systemctl stop iscsid.socket iscsid
+sudo systemctl start iscsid.socket iscsid
+
 
 # kind nodes are Docker containers; Longhorn/instance-manager uses nsenter,
 # so iSCSI tools must exist *inside the node containers* too.
@@ -170,6 +167,10 @@ systemctl is-active --quiet iscsid && echo " iscsid service is active."
 # -------------------------
 echo "--- 4. Deploying Longhorn CSI (v1.6.0) ---"
 kubectl apply -f https://raw.githubusercontent.com/longhorn/longhorn/v1.6.0/deploy/longhorn.yaml
+
+
+# Force Longhorn to expect only 1 replica (since we only have 1 worker node)
+kubectl -n longhorn-system patch settings.longhorn.io default-replica-count --type merge -p '{"value": "1"}'
 
 # -------------------------
 # 5) Wait for Longhorn control plane (defensive)
@@ -243,10 +244,22 @@ wait_longhorn
 kubectl get pods -n longhorn-system
 echo "Longhorn control plane is Running (or at least controllers have reached readiness)."
 
+
+
+
+
 # -------------------------
 # 6) Configure default StorageClass
 # -------------------------
 echo "--- 6. Configuring Default StorageClass ---"
+
+
+# Set default StorageClass annotations.
+kubectl patch storageclass standard \
+  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' || true
+kubectl patch storageclass longhorn \
+  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' || true
+
 
 # Wait for the longhorn StorageClass to appear.
 MAX_RETRIES=15
@@ -261,11 +274,6 @@ while ! kubectl get storageclass longhorn >/dev/null 2>&1; do
   COUNT=$((COUNT + 1))
 done
 
-# Set default StorageClass annotations.
-kubectl patch storageclass standard \
-  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"false"}}}' || true
-kubectl patch storageclass longhorn \
-  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' || true
 
 kubectl get sc
 echo "--------------------------------------------------------"
