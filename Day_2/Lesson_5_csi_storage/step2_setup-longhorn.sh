@@ -181,33 +181,51 @@ echo "--- Verification: iscsid running? ---"
 systemctl is-active --quiet iscsid && echo " iscsid service is active."
 
 # -------------------------
-# 3c) Pre-flight: verify CNI is actually healthy before Longhorn install
+# 3c) Pre-flight: wait for CNI to come up before Longhorn install
 # -------------------------
-echo "--- 3c. Pre-flight: checking CNI pods... ---"
-# Wait briefly for common CNI pods to appear
-kubectl get pods -A -o wide | grep -Ei 'cni|calico|cilium|flannel' || true
+echo "--- 3c. Pre-flight: waiting for networking pods (CNI) ---"
 
-# Fail fast if any CNI-related pods are not Running/Completed
-CNI_BAD="$(kubectl get pods -A --no-headers 2>/dev/null | grep -Ei 'cni|calico|cilium|flannel' || true)"
-echo "$CNI_BAD"
+MAX_WAIT=120   # seconds
+SLEEP=5
+ELAPSED=0
 
-echo "--- 3c. Pre-flight: checking CNI pods... ---"
+while [ $ELAPSED -lt $MAX_WAIT ]; do
+  # kindnet is default; include other possible CNIs
+  CNI_PODS="$(kubectl get pods -n kube-system --no-headers 2>/dev/null \
+    | grep -Ei 'kindnet|calico|cilium|flannel|kube-router|cni' || true)"
 
-# Get only likely CNI pods
-CNI_PODS="$(kubectl get pods -A --no-headers 2>/dev/null | grep -Ei 'cni|calico|cilium|flannel' || true)"
-echo "$CNI_PODS"
+  # If nothing matches, wait a bit more (CNI might not have been created yet)
+  if [ -z "$CNI_PODS" ]; then
+    echo "No networking pods detected yet... (${ELAPSED}s/$MAX_WAIT)"
+    sleep $SLEEP
+    ELAPSED=$((ELAPSED + SLEEP))
+    continue
+  fi
 
+  echo "Detected networking pods:"
+  echo "$CNI_PODS"
+
+  # If any are still Pending/CrashLoop/ContainerCreating, wait a little
+  if echo "$CNI_PODS" | grep -Ei 'ContainerCreating|CrashLoopBackOff|Pending' >/dev/null; then
+    echo "Networking pods not ready yet... waiting (${ELAPSED}s/$MAX_WAIT)"
+    sleep $SLEEP
+    ELAPSED=$((ELAPSED + SLEEP))
+    continue
+  fi
+
+  # Looks good
+  echo "Networking pods look healthy. Proceeding..."
+  break
+done
+
+# Final check: if we still don't have networking pods, fail
 if [ -z "$CNI_PODS" ]; then
-  echo "ERROR: No CNI pods found yet. Skipping Longhorn install."
+  echo "ERROR: Timed out waiting for networking (CNI) pods."
   exit 1
 fi
 
-if echo "$CNI_PODS" | grep -Ei 'ContainerCreating|CrashLoopBackOff|Pending' >/dev/null; then
-  echo "ERROR: CNI pods not healthy yet. Skipping Longhorn install."
-  exit 1
-fi
-
-echo "CNI pre-flight looks ok. Proceeding to Longhorn install..."
+# Optional: show kube-system pod summary
+kubectl get pods -n kube-system
 
 
 # -------------------------
