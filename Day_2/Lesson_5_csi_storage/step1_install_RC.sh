@@ -25,7 +25,7 @@ if ! command -v kubectl &> /dev/null; then
 fi
 
 echo "--- 4. Creating KiND Cluster with Host Pass-through ---"
-# This config is CRITICAL. Without /dev and /lib/modules, Rook cannot see disks.
+# CRITICAL: Without /dev and /lib/modules, Rook cannot see disks / needed kernel modules.
 kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
 
 cat <<EOF > kind-config.yaml
@@ -36,6 +36,8 @@ nodes:
   extraMounts:
   - hostPath: /dev
     containerPath: /dev
+  - hostPath: /lib/modules
+    containerPath: /lib/modules
 EOF
 
 kind create cluster --name "$CLUSTER_NAME" --config kind-config.yaml --wait 0s
@@ -52,31 +54,34 @@ kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/crds.yaml"
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/operator.yaml"
 
 echo "Waiting for Operator deployment..."
-kubectl --context "$KIND_CONTEXT" -n rook-ceph rollout status deployment/rook-ceph-operator --timeout=120s
+kubectl --context "$KIND_CONTEXT" -n rook-ceph rollout status deployment/rook-ceph-operator --timeout=180s
 
 echo "--- 7. Installing Rook-Ceph Cluster (Test Mode) ---"
-# cluster-test.yaml is designed for limited resource environments
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/cluster-test.yaml"
 
-echo "--- 8. Creating StorageClass & Setting as Default ---"
-# storageclass-test.yaml provides 'rook-ceph-block'
-kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/storageclass-test.yaml"
+echo "--- 8. Creating StorageClass (RBD / Block mode) ---"
+# FIXED PATH:
+# storageclass-test.yaml lives under csi/rbd/
+kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/csi/rbd/storageclass-test.yaml"
 
 # Set rook-ceph-block as the default SC
 kubectl --context "$KIND_CONTEXT" patch storageclass rook-ceph-block \
-  -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+  -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' || true
 
 echo "--- 9. Waiting for Ceph Cluster to Initialise ---"
-# We wait for the 'replicapool' to show up, indicating the OSDs are up and running
 echo "This may take 3-5 minutes depending on your VM speed..."
 until kubectl --context "$KIND_CONTEXT" -n rook-ceph get cephblockpool replicapool &>/dev/null; do
     echo -n "."
     sleep 5
 done
+echo ""
 
-echo -e "\n--------------------------------------------------------"
-echo "ROOK-CEPH INSTALLATION COMPLETE"
+echo "--- 10. Waiting for StorageClass to be usable ---"
+kubectl --context "$KIND_CONTEXT" get storageclass rook-ceph-block >/dev/null
+
+
+echo "--------------------------------------------------------"
+echo "INSTALLATION COMPLETE"
 echo "Cluster: $CLUSTER_NAME"
 echo "Context: $KIND_CONTEXT"
-echo "Note: Monitor pods with: kubectl get pods -n rook-ceph"
 echo "--------------------------------------------------------"
