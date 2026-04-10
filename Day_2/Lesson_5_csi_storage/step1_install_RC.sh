@@ -4,6 +4,12 @@ set -euo pipefail
 CLUSTER_NAME="rook-ceph-lab"
 KIND_CONTEXT="kind-${CLUSTER_NAME}"
 
+
+echo "--- 0. Repairing any interrupted dpkg/apt state ---"
+sudo dpkg --configure -a || true
+sudo apt -f install -y || true
+
+
 echo "--- 1. Updating Package Index & Installing Host Dependencies ---"
 # Rook-Ceph requires lvm2 on the host and extra kernel modules for iSCSI/RBD
 sudo apt update
