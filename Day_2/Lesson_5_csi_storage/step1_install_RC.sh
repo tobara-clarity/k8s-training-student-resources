@@ -25,10 +25,9 @@ if ! command -v kubectl &> /dev/null; then
 fi
 
 echo "--- 4. Creating KiND Cluster with Host Pass-through ---"
-# CRITICAL: Without /dev and /lib/modules, Rook cannot see disks / needed kernel modules.
 kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
 
-cat <<EOF > kind-config.yaml
+cat <<'EOF' > kind-config.yaml
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -36,11 +35,10 @@ nodes:
   extraMounts:
   - hostPath: /dev
     containerPath: /dev
-  - hostPath: /lib/modules
-    containerPath: /lib/modules
 EOF
 
 kind create cluster --name "$CLUSTER_NAME" --config kind-config.yaml --wait 0s
+
 
 echo "--- 5. Waiting for Nodes Ready ---"
 kubectl --context "$KIND_CONTEXT" wait --for=condition=Ready nodes --all --timeout=300s
