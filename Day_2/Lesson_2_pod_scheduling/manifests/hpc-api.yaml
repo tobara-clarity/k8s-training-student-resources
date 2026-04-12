@@ -2,20 +2,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webserver
+  name: hpc-api
   namespace: default
 spec:
-  replicas: 5
+  replicas: 1
   selector:
     matchLabels:
-      app: webserver
+      app: hpc-api
   template:
     metadata:
       labels:
-        app: webserver
+        app: hpc-api
     spec:
       containers:
-      - name: webserver
+      - name: hpc-api
         image: hashicorp/http-echo:1.0.0
         args:
           - "-listen=:8080"

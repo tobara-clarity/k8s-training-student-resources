@@ -24,7 +24,7 @@ metadata:
   name: webserver
   namespace: default
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       app: webserver
@@ -40,7 +40,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: netshoot-webserver
+  name: webserver
   namespace: default
 spec:
   type: NodePort
