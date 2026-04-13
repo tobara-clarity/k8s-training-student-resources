@@ -9,7 +9,7 @@ This guide provides step-by-step instructions on how to securely connect to your
 
 ## Prerequisites
 
-Before you begin, locate the **Welcome to K8s Training - Your Student VM Details** you received for the course. It contains three critical pieces of information you will need:
+Before you begin, locate the **Welcome to K8s Training - Your Student VM Details** email you received for the course. It contains three critical pieces of information you will need:
 
 1. **VM Default Username** (`k8s-training`)
 2. **VM IP Address** (e.g., `192.168.1.50`)
