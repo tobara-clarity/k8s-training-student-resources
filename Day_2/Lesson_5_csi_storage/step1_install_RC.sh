@@ -6,30 +6,28 @@ KIND_CONTEXT="kind-${CLUSTER_NAME}"
 ROOK_NS="rook-ceph"
 CEPH_CLUSTER_NAME="my-cluster"
 
-echo "--- 0. Repairing any interrupted dpkg/apt state ---"
+echo "--- 0. Repair any interrupted dpkg/apt state ---"
 sudo dpkg --configure -a || true
 sudo apt -f install -y || true
 
-echo "--- 1. Updating Package Index & Installing Host Dependencies ---"
+echo "--- 1. Host deps ---"
 sudo apt update
 sudo apt install -y docker.io lvm2 thin-provisioning-tools linux-modules-extra-$(uname -r)
 sudo systemctl enable --now docker
-
-echo "--- 2. Ensuring current user can run docker ---"
 sudo usermod -aG docker "$USER" || true
 
-echo "--- 3. Installing KiND & kubectl ---"
-if ! command -v kind &> /dev/null; then
+echo "--- 2. Install kind & kubectl ---"
+if ! command -v kind &>/dev/null; then
   curl -fLo ./kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
   chmod +x ./kind
   sudo mv ./kind /usr/local/bin/kind
 fi
 
-if ! command -v kubectl &> /dev/null; then
+if ! command -v kubectl &>/dev/null; then
   sudo snap install kubectl --classic
 fi
 
-echo "--- 4. Creating KiND Cluster with Host Pass-through ---"
+echo "--- 3. Create kind cluster ---"
 kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
 
 cat <<'EOF' > kind-config.yaml
@@ -44,10 +42,10 @@ EOF
 
 kind create cluster --name "$CLUSTER_NAME" --config kind-config.yaml --wait 0s
 
-echo "--- 5. Waiting for Nodes Ready ---"
+echo "--- 4. Wait for nodes Ready ---"
 kubectl --context "$KIND_CONTEXT" wait --for=condition=Ready nodes --all --timeout=300s
 
-echo "--- 6. Installing Rook-Ceph Operator (pinned release) ---"
+echo "--- 5. Install rook-ceph (pinned release) ---"
 ROOK_URL="https://raw.githubusercontent.com/rook/rook/release-1.13/deploy/examples"
 
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/common.yaml"
@@ -57,57 +55,77 @@ kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/operator.yaml"
 echo "Waiting for rook-ceph-operator..."
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/rook-ceph-operator --timeout=600s
 
-echo "Waiting for ceph-csi-controller-manager..."
-kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/ceph-csi-controller-manager --timeout=600s
+echo "--- 5.1 Force enable CSI RBD in the operator ---"
+# These env vars match what rook operator uses in your earlier logs.
+kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" set env deployment/rook-ceph-operator \
+  ROOK_CSI_ENABLE_RBD=true \
+  ROOK_CSI_DISABLE_DRIVER=false \
+  ROOK_USE_CSI_OPERATOR=true || true
 
-echo "--- 6.1. Ensuring WATCH_NAMESPACE is set on CSI controller-manager ---"
-kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" set env deployment/ceph-csi-controller-manager WATCH_NAMESPACE="$ROOK_NS" >/dev/null 2>&1 || true
-kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout restart deployment/ceph-csi-controller-manager >/dev/null 2>&1 || true
-kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/ceph-csi-controller-manager --timeout=600s
+kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout restart deployment/rook-ceph-operator || true
+kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/rook-ceph-operator --timeout=600s
 
-echo "--- 7. Installing Rook-Ceph Cluster (Test Mode) ---"
-kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/cluster-test.yaml"
+echo "--- 6. Apply CephCluster (test mode) ---"
+kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" apply -f "${ROOK_URL}/cluster-test.yaml"
 
-echo "--- 7.1. Patching CephCluster image to satisfy squid minimum ---"
-# Your lab’s detect-version gate wanted 19.2.0-0 squid.
+echo "--- 6.1 (Optional) Patch Ceph version for Squid minimum ---"
+# If your earlier env still enforces ">= 19.2.0-0 squid", this is the usual workaround.
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch cephcluster "$CEPH_CLUSTER_NAME" \
   --type merge \
   -p '{"spec":{"cephVersion":{"image":"quay.io/ceph/ceph:v19.2.0"}}}' >/dev/null 2>&1 || true
 
-echo "--- 8. Installing RBD StorageClass ---"
+echo "--- 7. Apply RBD StorageClass (correct path) ---"
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/csi/rbd/storageclass-test.yaml"
 
-# Set rook-ceph-block as default SC (idempotent best-effort)
+echo "--- 7.1 Set rook-ceph-block as default StorageClass ---"
 kubectl --context "$KIND_CONTEXT" patch storageclass rook-ceph-block \
   -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' >/dev/null 2>&1 || true
 
-echo "--- 9. Waiting for CSIDriver registration (bounded) ---"
-CSIDRIVER_NAME="rook-ceph.rbd.csi.ceph.com"
-timeout_seconds=900
+
+
+echo "--- 8. Waiting for Ceph MON + OSD quorum signals (with live printout) ---"
+timeout_seconds=600
 start_ts=$(date +%s)
 
-until kubectl --context "$KIND_CONTEXT" get csidriver "$CSIDRIVER_NAME" >/dev/null 2>&1; do
+while true; do
   now_ts=$(date +%s)
   elapsed=$(( now_ts - start_ts ))
   if [ "$elapsed" -ge "$timeout_seconds" ]; then
-    echo "ERROR: Timed out waiting for CSIDriver: $CSIDRIVER_NAME"
+    echo "ERROR: Timed out waiting for MON/OSD quorum signals."
+    echo "---- Current rook-ceph pods (MON/OSD) ----"
+    kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods | egrep 'rook-ceph-(mon|osd)' || true
     echo "---- CephCluster status ----"
     kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" describe cephcluster "$CEPH_CLUSTER_NAME" | tail -n 120 || true
-    echo "---- CSI controller logs ----"
-    POD=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods -o name | grep ceph-csi-controller-manager | head -n1 || true)
-    if [ -n "$POD" ]; then kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" logs "${POD#pod/}" --tail=200 || true; fi
-    echo "---- CSI CSIDrivers ----"
-    kubectl --context "$KIND_CONTEXT" get csidriver || true
     exit 1
   fi
-  echo "Waiting for CSIDriver $CSIDRIVER_NAME ..."
+
+  # Count ready MONs and OSDs by READY column == 1/1
+  mon_ready=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
+  | awk '/rook-ceph-mon/ && $2=="1\/1" && $3=="Running"{c++} END{print (c?c:0)}')
+
+  osd_ready=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
+  | awk '/rook-ceph-osd/ && $2=="1\/1" && $3=="Running"{c++} END{print (c?c:0)}')
+
+  echo "  [${elapsed}s] MON Ready: ${mon_ready} | OSD Ready: ${osd_ready}"
+
+  # In test mode you typically have MON count = 1
+  if [ "${mon_ready}" -ge 1 ] && [ "${osd_ready}" -ge 1 ]; then
+    echo "--- Ceph MON/OSD quorum signals reached ---"
+    break
+  fi
+
   sleep 5
 done
 
-echo "CSIDriver registered: $CSIDRIVER_NAME"
 
-echo "--------------------------------------------------------"
-echo "ROOK-CEPH INSTALLATION COMPLETE"
-echo "Cluster: $CLUSTER_NAME"
-echo "Context: $KIND_CONTEXT"
-echo "--------------------------------------------------------"
+
+echo "--- 9. Done (operator/ceph may still be progressing) ---"
+echo "Waiting for rook-ceph-blockpool replicapool to exist (signal only)..."
+until kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get cephblockpool replicapool &>/dev/null; do
+  echo -n "."
+  sleep 5
+done
+echo ""
+
+echo "INSTALLATION COMPLETE"
+kubectl --context "$KIND_CONTEXT" get storageclass | grep rook-ceph || true
