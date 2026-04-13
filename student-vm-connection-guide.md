@@ -31,7 +31,7 @@ Please select your operating system and preferred terminal from the list below:
 
 
 ## Windows 11 (Built-in SSH Client)
-Windows 11 comes with a built-in SSH client that you can use via PowerShell or the Command Prompt. SSH requires your private key to be heavily secured so that only your user account can read it.
+Windows 11 comes with a built-in SSH client that you can use via PowerShell or the Command Prompt (as long as this service has been enabled by an administrator).
 
 ### Step 2: Secure Your SSH Key
 You must restrict the permissions of your downloaded private key file. You can do this using the Graphical User Interface (GUI) or the Command Line Interface (CLI).
@@ -43,6 +43,8 @@ You must restrict the permissions of your downloaded private key file. You can d
 4. Click **Disable inheritance**. Choose the option to **Remove all inherited permissions from this object**.
 5. Click **Add**, then click **Select a principal**.
 6. Type your exact Windows username (*not* the VM Default Username from your email) into the box, click **Check Names**, and then click **OK**.
+    > [!TIP]
+    > If you aren't sure of your exact Windows username, open Task Manager (Ctrl+Shift+Esc), navigate to the "Users" tab, and look at the account name listed there. Enter only that exact username; do not include your domain or email address.
 7. In the permissions window, check the box for **Read** and click **OK**.
 8. Click **OK** on all remaining windows to apply the settings.
 
@@ -180,36 +182,36 @@ ssh -i [vm-#-key] k8s-training@[ip-address]
 
 
 
-# I Need Help!
-If you are unable to connect to your VM, walk through these verification steps in order. They range from the most common mistakes to rarer edge cases.
+## I Need Help!
+If you are unable to connect to your VM, walk through each of these verification steps in order. They range from the most common mistakes to rarer edge cases.
 
 1. Verify Credentials and Typos
-    * **Error**: `ssh: connect to host [ip-address] port 22: Connection timed out` or `Permission denied (publickey)`.
+    * **Example Error**: `ssh: connect to host [ip-address] port 22: Connection timed out` or `Permission denied (publickey)`.
     * **Fix**: Double-check your IP address and username. Ensure you didn't accidentally copy a trailing space or swap numbers around. The username must be `k8s-training`, not your personal name.
 
 2. Verify Key File Path
-    * **Error**: `Warning: Identity file [vm-#-key] not accessible: No such file or directory`.
-    * **Fix**: The SSH command cannot find your key file. Ensure you are running the ssh command from the exact same folder where the file lives (usually `Downloads`), OR provide the full path to the file in the command (e.g., `ssh -i C:\Users\Name\Downloads\[vm-#-key] k8s-training@[ip-address]`).
+    * **Example Error**: `Warning: Identity file [vm-#-key] not accessible: No such file or directory`.
+    * **Fix**: Ensure you are running the ssh command from the exact same folder where the file lives (usually `Downloads`), OR provide the full path to the file in the command (e.g., `ssh -i C:\Users\Name\Downloads\[vm-#-key] k8s-training@[ip-address]`).
 
 3. Verify File Permissions
-    * **Error**: `WARNING: UNPROTECTED PRIVATE KEY FILE!`
+    * **Example Error**: `WARNING: UNPROTECTED PRIVATE KEY FILE!`
     * **Fix**: Your SSH client is rejecting the key because it is readable by other users on your system. You must go back to Step 2 for your specific operating system and ensure the key's permissions are restricted to your user account only (`chmod 400`):
       * [Windows 11 (Built-in SSH Client)](#windows-11-built-in-ssh-client)
       * [Windows 11 (Windows Subsystem for Linux - WSL)](#windows-11-wsl)
-      * [Windows 11 (Git BASH)](#windows-11-git-bash)
+      * [Windows 11 (Git Bash)](#windows-11-git-bash)
       * [macOS (Built-in Terminal or iTerm)](#macos-terminal-and-iterm)
       * [Ubuntu Linux (Built-in Terminal)](#ubuntu-linux)
 
 4. Verify Network Restrictions
-    * **Error**: `ssh: connect to host [ip-address] port 22: Connection timed out` (even when the IP is correct).
-    * **Fix**: You might be on a restricted corporate network or VPN that blocks outgoing SSH connections (Port 22). Try disconnecting from your VPN or switching to a different Wi-Fi network (like a mobile hotspot) to see if the connection goes through.
+    * **Example Error**: `ssh: connect to host [ip-address] port 22: Connection timed out` (even when the IP is correct).
+    * **Fix**: You might be on a restrictive network or VPN that blocks outgoing SSH connections (Port 22). Try disconnecting from your VPN or switching to a different Wi-Fi network (like a mobile hotspot) to see if the connection goes through.
 
 5. Verify File Format (Missing Newline)
-    * **Error**: `Load key "[vm-#-key]": invalid format`
-    * **Fix**: Occasionally, browsers or text editors modify the downloaded key file and remove the required blank line at the end of the file.
-        1. Open your `[vm-#-key]` file in a basic text editor (like Notepad on Windows, or nano/TextEdit on macOS/Linux).
-        2. Scroll to the very bottom. The last line of text should be `-----END OPENSSH PRIVATE KEY-----` (or similar).
-        3. Place your cursor at the end of that line and press Enter/Return exactly once to add a single blank line.
-        4. Save the file and try your SSH command again.
+   * **Example Error**: `Load key "[vm-#-key]": invalid format`
+   * **Fix**: Occasionally, browsers or text editors modify the downloaded key file and remove the required blank line at the end of the file.
+     1. Open your `[vm-#-key]` file in a basic text editor (like Notepad on Windows, or nano/TextEdit on macOS/Linux).
+     2. Scroll to the very bottom. The last line of text should be `-----END OPENSSH PRIVATE KEY-----` (or similar).
+     3. Place your cursor at the end of that line and press Enter/Return exactly once to add a single blank line.
+     4. Save the file and try your SSH command again.
 
-Still having trouble? Join Lab VM Troubleshooting room for assistance. See your welcome email for details.
+Still having trouble? Send a message in Slack or join the Lab VM Troubleshooting room for assistance. See your welcome email for details.
