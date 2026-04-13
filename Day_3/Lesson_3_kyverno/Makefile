@@ -1,4 +1,5 @@
 setup: setup-cluster setup-kyverno
+	git pull
 
 setup-cluster:
 	@ registry_up
