@@ -11,13 +11,13 @@ This guide provides step-by-step instructions on how to securely connect to your
 
 Before you begin, locate the **Welcome to K8s Training - Your Student VM Details** you received for the course. It contains three critical pieces of information you will need:
 
-1. **VM IP Address** (e.g., `192.168.1.50`)
-2. **Default VM Username** (e.g., `k8s-training`)
-3. **Azure SAS URL**, which is a unique link to download your private SSH key file.
+1. **VM Default Username** (`k8s-training`)
+2. **VM IP Address** (e.g., `192.168.1.50`)
+3. **VM SSH Private Key URL**, which is a unique link to download your private SSH key file.
 
 ### Step 1: Download Your SSH Key
 
-Click the **Azure SAS URL** provided in your email. This will automatically download a private key file to your computer (e.g., `vm-#-key`). By default, this usually saves to your `Downloads` folder.
+Click the **VM SSH Private Key URL** provided in your email. This will automatically download a private key file to your computer (e.g., `vm-#-key`). By default, this usually saves to your `Downloads` folder.
 
 ## Operating System Guides
 
