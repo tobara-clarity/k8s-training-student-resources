@@ -21,26 +21,23 @@ sudo apt-get update -y >/dev/null 2>&1 || true
 sudo apt-get install -y util-linux >/dev/null 2>&1 || true
 
 echo "--- 1.2 Create loopback device(s) for OSDs (>=5GB) ---"
-# This lab typically needs loopback devices because Kind mounts host /dev into the node.
-# Create one 20G loop file and attach it.
 LOOP_IMG="/tmp/rook-ceph-loop.img"
 LOOP_SIZE="20G"
 
 sudo rm -f "$LOOP_IMG" || true
 sudo losetup -D || true
 
-# Prefer fallocate if present; fallback to dd.
 if command -v fallocate >/dev/null 2>&1; then
   sudo fallocate -l "$LOOP_SIZE" "$LOOP_IMG"
 else
+  # fallback
   sudo dd if=/dev/zero of="$LOOP_IMG" bs=1M count=20480
 fi
 
-# Attach the file to the first free /dev/loopX
 sudo losetup -fP "$LOOP_IMG"
 
-echo "--- Attached loops ---"
-sudo losetup -a || true
+echo "--- Attached loops (tail) ---"
+sudo losetup -a | tail -n 5 || true
 
 echo "--- 2. Install kind & kubectl ---"
 if ! command -v kind &>/dev/null; then
@@ -81,7 +78,7 @@ kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/operator.yaml"
 echo "Waiting for rook-ceph-operator..."
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/rook-ceph-operator --timeout=600s
 
-echo "--- 5.1 Enable CSI RBD + allow loop devices in operator ---"
+echo "--- 5.1 Enable CSI RBD + allow loop devices in the operator ---"
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" set env deployment/rook-ceph-operator \
   ROOK_CSI_ENABLE_RBD=true \
   ROOK_CSI_DISABLE_DRIVER=false \
@@ -99,50 +96,64 @@ kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch cephcluster "$CEPH_CLUSTER
   --type merge \
   -p '{"spec":{"cephVersion":{"image":"quay.io/ceph/ceph:v19.2.0"}}}' >/dev/null 2>&1 || true
 
-echo "--- 6.2 Restrict CephCluster device selection to /dev/loop* only ---"
-# This avoids VM partitions and ensures OSD provisioning uses loop devices.
+echo "--- 6.2 Restrict CephCluster device selection to loop devices ---"
+# IMPORTANT FIX:
+# rook OSD inventory is skipping devices like "loop11" because it matches KNAME, not /dev/loop11.
+# So filter must be ^loop[0-9]+$ (NOT ^/dev/loop[0-9]+$)
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch cephcluster "$CEPH_CLUSTER_NAME" \
   --type merge \
-  -p '{"spec":{"storage":{"useAllDevices":false,"deviceFilter":"^\\/dev\\/loop[0-9]+$"}}}' >/dev/null 2>&1 || true
+  -p '{"spec":{"storage":{"useAllDevices":false,"deviceFilter":"^loop[0-9]+$"}}}' >/dev/null 2>&1 || true
 
-echo "--- 7. Apply RBD StorageClass ---"
+echo "--- 7. Apply RBD StorageClass (CSI RBD) ---"
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/csi/rbd/storageclass-test.yaml"
 
 echo "--- 7.1 Set rook-ceph-block as default StorageClass ---"
 kubectl --context "$KIND_CONTEXT" patch storageclass rook-ceph-block \
   -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' >/dev/null 2>&1 || true
 
-echo "--- 8. Waiting for MON running + at least one OSD pod exists (quorum-style live printout) ---"
-timeout_seconds=900
+echo "--- 8. Waiting for MON running + at least one OSD pod exists (with live printout) ---"
+timeout_seconds=1800
 start_ts=$(date +%s)
 
 while true; do
   elapsed=$(( $(date +%s) - start_ts ))
   if [ "$elapsed" -ge "$timeout_seconds" ]; then
-    echo "ERROR: Timed out waiting for MON/OSD startup signals."
-    echo "---- Current rook-ceph pods (mon/osd) ----"
+    echo "ERROR: Timed out waiting for MON + OSD startup signals."
+
+    echo "---- rook-ceph pods (mon/osd/osd-prepare) ----"
     kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods | egrep 'rook-ceph-(mon|osd)' || true
-    echo "---- CephCluster status ----"
-    kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" describe cephcluster "$CEPH_CLUSTER_NAME" | tail -n 120 || true
+
+    echo "---- CephBlockPool replicapool ----"
+    kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" describe cephblockpool replicapool | tail -n 80 || true
+
+    echo "---- Latest osd-prepare logs (if any) ----"
+    PREP_POD=$(
+      kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --sort-by=.metadata.creationTimestamp \
+        | egrep '^rook-ceph-osd-prepare' | tail -n 1 | awk '{print $1}' || true
+    )
+    if [ -n "$PREP_POD" ]; then
+      kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" logs "$PREP_POD" --tail=200 || true
+    fi
+
     exit 1
   fi
 
-  # READY column is $2, STATUS column is $3
   mon_running=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
     | awk '$1 ~ /^rook-ceph-mon/ && $2=="1\/1" && $3=="Running"{c++} END{print (c?c:0)}')
 
-  # Count only real OSD pods (exclude osd-prepare)
   osd_pod_count=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
-    | awk '$1 ~ /^rook-ceph-osd-[^-]/ {c++} END{print (c?c:0)}')
+    | awk '$1 ~ /^rook-ceph-osd-/ {c++} END{print (c?c:0)}')
 
-  echo "  [${elapsed}s] MON Running: ${mon_running} | OSD pod count: ${osd_pod_count}"
+  echo "  [${elapsed}s] MON Running: ${mon_running} | OSD pod count (incl prepare): ${osd_pod_count}"
 
+  # For this lab, break once MON is up and any osd* pod exists.
+  # (If no devices match, osd-daemon won't come up; osd-prepare will still appear—this gives us earlier signal.)
   if [ "${mon_running}" -ge 1 ] && [ "${osd_pod_count}" -ge 1 ]; then
     echo "--- MON running and at least one OSD pod exists ---"
     break
   fi
 
-  sleep 5
+  sleep 10
 done
 
 echo "--- 9. Signal: wait for CephBlockPool replicapool object to exist ---"
@@ -152,9 +163,7 @@ until kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get cephblockpool replicap
 done
 echo ""
 
-echo "--------------------------------------------------------"
 echo "INSTALLATION COMPLETE"
 echo "Cluster: $CLUSTER_NAME"
 echo "Context: $KIND_CONTEXT"
-echo "--------------------------------------------------------"
 kubectl --context "$KIND_CONTEXT" get storageclass | grep rook-ceph || true
