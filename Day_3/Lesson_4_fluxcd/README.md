@@ -111,5 +111,53 @@ We are going to put the last two labs together in a simple gitops example.
 2. Now lets bootstrap our simple gitops. `kubectl apply -f kubectl apply -f manifests/gitops-example/gotk-sync.yaml`
 4. Go ahead and run `kubectl get hr` and `kubectl get ks`. Our previous labs are deployed! How did that happen? Lets look at the gotk-sync.yaml
 ```yaml
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+ name: gitops-example
+ namespace: default
+spec:
+ interval: 1m
+ url: https://github.com/chameleoncg/k8s-training-student-resources
+ ref:
+   branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+ name: gitops-reconcile
+ namespace: default
+spec:
+ interval: 10m
+ targetNamespace: default
+ sourceRef:
+   kind: GitRepository
+   name: gitops-example
+ path: "./Day_3/Lesson_4_fluxcd/manifests"
+ prune: true
+ timeout: 1m
 
 ```
+
+It's pointing to the manifest girectory. You'll notice inside that directoy is a file called kustomization.yaml Lets look at it.
+```yaml
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - gitops-example/gotk-sync.yaml
+  - gitrepo.yaml
+  - helmvalues.yaml
+  - helmrepo.yaml
+```
+Now, it's easy to think this is a flux kustomization but it isn't. It's a kustomize kustomization. Notice the different apiversion
+```yaml
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+ name: gitops-reconcile
+...
+```
+The kustomize kustomization is pointing kustomize to specific files to apply. Without a kustomization yaml, kustomize would just deploy everything in this directory. You'll also note that item one of the kustomization.yaml points back to the gotk-sync.yaml. That means that flux is not only installing the previous labs, it is monitoring your install of your gitops. If gotk-sync.yaml is updated to point to another branch, that branch would be automatically applied to your cluster. If you are doing this lab during the training, please post "Gitops deployed... waiting..."
