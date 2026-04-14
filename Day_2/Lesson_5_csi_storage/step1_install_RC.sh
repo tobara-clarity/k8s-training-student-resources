@@ -16,7 +16,7 @@ sudo apt install -y docker.io lvm2 thin-provisioning-tools linux-modules-extra-$
 sudo systemctl enable --now docker
 sudo usermod -aG docker "$USER" || true
 
-echo "--- 1.1 Install loopback helpers (util-linux) ---"
+echo "--- 1.1 Install util-linux (for losetup/loop mgmt) ---"
 sudo apt-get update -y >/dev/null 2>&1 || true
 sudo apt-get install -y util-linux >/dev/null 2>&1 || true
 
@@ -27,7 +27,7 @@ LOOP_SIZE="20G"
 sudo rm -f "$LOOP_IMG" || true
 sudo losetup -D || true
 
-# Use fully zero-filled file for deterministic bluestore probing.
+# Fully zero-fill to avoid bluestore label garbage
 sudo dd if=/dev/zero of="$LOOP_IMG" bs=1M count=20480 conv=fsync status=progress
 
 sudo losetup -fP "$LOOP_IMG"
@@ -76,15 +76,10 @@ kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/operator.yaml"
 echo "Waiting for rook-ceph-operator..."
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/rook-ceph-operator --timeout=600s
 
-echo "--- 5.1 Enable loop devices in operator CONFIGMAP (needed for loop OSDs) ---"
+echo "--- 5.1 Enable loop devices + CSI RBD in operator ---"
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch configmap rook-ceph-operator-config \
   --type merge \
-  -p '{"data":{"ROOK_CEPH_ALLOW_LOOP_DEVICES":"true"}}' >/dev/null 2>&1 || true
-
-# Ensure RBD CSI integration is enabled
-kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch configmap rook-ceph-operator-config \
-  --type merge \
-  -p '{"data":{"ROOK_CSI_ENABLE_RBD":"true","ROOK_USE_CSI_OPERATOR":"true","ROOK_CSI_DISABLE_DRIVER":"false"}}' >/dev/null 2>&1 || true
+  -p '{"data":{"ROOK_CEPH_ALLOW_LOOP_DEVICES":"true","ROOK_CSI_ENABLE_RBD":"true","ROOK_USE_CSI_OPERATOR":"true","ROOK_CSI_DISABLE_DRIVER":"false"}}' >/dev/null 2>&1 || true
 
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout restart deployment/rook-ceph-operator || true
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" rollout status deployment/rook-ceph-operator --timeout=600s
@@ -97,21 +92,19 @@ kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch cephcluster "$CEPH_CLUSTER
   --type merge \
   -p '{"spec":{"cephVersion":{"image":"quay.io/ceph/ceph:v19.2.0"}}}' >/dev/null 2>&1 || true
 
-echo "--- 6.2 Restrict CephCluster to ONLY /dev/${LOOP_KNAME} ---"
+echo "--- 6.2 Restrict OSD devices to ONLY /dev/loopX ---"
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" patch cephcluster "$CEPH_CLUSTER_NAME" \
   --type merge \
-  -p "{\"spec\":{\"storage\":{\"useAllDevices\":false,\"deviceFilter\":\"\",\"devices\":[{\"name\":\"/dev/${LOOP_KNAME}\"}]}}}" \
-  >/dev/null 2>&1 || true
+  -p "{\"spec\":{\"storage\":{\"useAllDevices\":false,\"deviceFilter\":\"\",\"devices\":[{\"name\":\"/dev/${LOOP_KNAME}\"}]}}}" >/dev/null 2>&1 || true
 
-echo "--- 7. Apply RBD StorageClass (kernel rbd mounter, lesson default) ---"
+echo "--- 7. Apply StorageClasses ---"
 kubectl --context "$KIND_CONTEXT" apply -f "${ROOK_URL}/csi/rbd/storageclass-test.yaml"
 
-echo "--- 7.1 Set rook-ceph-block as default StorageClass ---"
 kubectl --context "$KIND_CONTEXT" patch storageclass rook-ceph-block \
   -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}' >/dev/null 2>&1 || true
 
-echo "--- 7.2 Create alternate RBD StorageClass using rbd-nbd mounter (fixes modprobe/rbd) ---"
-kubectl --context "$KIND_CONTEXT" apply -f - <<'YAML'
+echo "--- 7.1 Create rbd-nbd StorageClass to avoid kernel modprobe issues ---"
+kubectl --context "$KIND_CONTEXT" apply -f - <<YAML
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
@@ -134,35 +127,7 @@ allowVolumeExpansion: true
 reclaimPolicy: Delete
 YAML
 
-echo "--- 8. Wait for Ceph MON + OSD daemon ready (quorum-style) ---"
-timeout_seconds=1800
-start_ts=$(date +%s)
-
-while true; do
-  elapsed=$(( $(date +%s) - start_ts ))
-  if [ "$elapsed" -ge "$timeout_seconds" ]; then
-    echo "ERROR: Timed out waiting for MON + OSD daemon."
-    kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods | egrep 'rook-ceph-(mon|osd|osd-prepare)' || true
-    exit 1
-  fi
-
-  mon_running=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
-    | awk '$1 ~ /^rook-ceph-mon/ && $2=="1\/1" && $3=="Running"{c++} END{print (c?c:0)}')
-
-  osd_daemons=$(kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get pods --no-headers 2>/dev/null \
-    | awk '$1 ~ /^rook-ceph-osd-[0-9]+-/ && $2=="1\/1" && $3=="Running"{c++} END{print (c?c:0)}')
-
-  echo "  [${elapsed}s] MON Running: ${mon_running} | OSD daemon ready: ${osd_daemons}"
-
-  if [ "${mon_running}" -ge 1 ] && [ "${osd_daemons}" -ge 1 ]; then
-    echo "--- MON running and OSD daemon is ready ---"
-    break
-  fi
-
-  sleep 10
-done
-
-echo "--- 9. Wait for CephBlockPool replicapool to be Ready ---"
+echo "--- 8. Wait for CephBlockPool replicapool to be Ready (true functional gate) ---"
 until kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get cephblockpool replicapool -o jsonpath='{.status.phase}' 2>/dev/null | grep -q '^Ready$'; do
   echo -n "."
   sleep 5
@@ -170,9 +135,8 @@ done
 echo ""
 
 echo "--------------------------------------------------------"
-echo "INSTALLATION COMPLETE"
+echo "ROOK-CEPH INSTALLATION COMPLETE"
 echo "Cluster: $CLUSTER_NAME"
 echo "Context: $KIND_CONTEXT"
 kubectl --context "$KIND_CONTEXT" -n "$ROOK_NS" get cephblockpool replicapool
-kubectl --context "$KIND_CONTEXT" get storageclass | egrep 'rook-ceph-(block|block-nbd)' || true
 echo "--------------------------------------------------------"
