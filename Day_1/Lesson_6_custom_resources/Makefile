@@ -1,4 +1,4 @@
-setup: setup-cluster setup-flux
+setup: setup-cluster
 	@ git pull
 
 setup-cluster:
