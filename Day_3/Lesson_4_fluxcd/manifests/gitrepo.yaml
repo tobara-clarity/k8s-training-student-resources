@@ -5,7 +5,7 @@ metadata:
  name: git-example
  namespace: default
 spec:
- interval: 5m
+ interval: 60m
  url: https://github.com/chameleoncg/k8s-training-student-resources
  ref:
    branch: main
