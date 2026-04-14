@@ -5,7 +5,7 @@ setup-cluster:
 	@ registry_up
 	@ kind_up
 
-setup-kyverno: setup-cluster
+setup-flux: setup-cluster
 	@ flux install
 
 teardown:

@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: helmvalues
+  namespace: default
+data:
+  values.yaml: |-
+    replicaCount: 2
+    serviceAccount:
+      enabed: true
