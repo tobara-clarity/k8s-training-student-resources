@@ -3,11 +3,11 @@ import sys
 import time
 
 
-required_var = os.environ.get("REQUIRED_ENV")
+required_var = os.environ.get("REQUIRED_ENV4")
 
 with open("/var/log/log.txt", "r+") as f:
 
-    if (!required_var or require_var != True):
+    if (not required_var or require_var != "true"):
         f.write("Missing or incorrect value for required variable REQUIRED_ENV. Set it to True.")
         exit(1)
 

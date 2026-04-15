@@ -15,4 +15,4 @@ spec:
     spec:
       containers:
         - name: app
-          image: ghcr.io/acme-training/private-debug-app:1.0.0
+          image: ghcr.io/jsmith-clarityinnovates/python:1.0.0

@@ -17,7 +17,7 @@ KIND_CONFIG := single-node-kind-config.yaml
 .PHONY: help single-node-kind-cluster namespace load-kyverno build-app-image \
 	load-app-image create-private-registry-secret validate clean \
 	deploy-lab1 clean-lab1 deploy-lab2 clean-lab2 deploy-lab3 clean-lab3 \
-	deploy-lab4 clean-lab4
+	deploy-lab4 clean-lab4 deploy-labs clean-labs
 
 single-node-kind-cluster:
 	@if $(KIND) get clusters | grep -qx '$(CLUSTER_NAME)'; then \
@@ -55,7 +55,7 @@ create-private-registry-secret: namespace
 		--namespace debugging \
 		--docker-server ghcr.io \
 		--docker-username training \
-		--docker-password training \
+		--docker-password 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 \
 		--dry-run=client -o yaml | $(KUBECTL) apply -f -
 
 deploy-lab1: namespace create-private-registry-secret load-kyverno load-app-image
@@ -89,10 +89,10 @@ clean-lab3:
 	#$(KUBECTL) delete -f $(DEPLOY_DIR)/lab3/deployment8.yaml
 
 deploy-lab4: namespace create-private-registry-secret load-kyverno load-app-image
-	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab4/deployment9.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab4/deployment8.yaml
 
 clean-lab4:
-	$(KUBECTL) delete -f $(DEPLOY_DIR)/lab4/deployment9.yaml
+	$(KUBECTL) delete -f $(DEPLOY_DIR)/lab4/deployment8.yaml
 
 validate:
 	kubectl apply --dry-run=client -f $(DEPLOY_DIR)/namespace.yaml
@@ -104,7 +104,20 @@ validate:
 	kubectl apply --dry-run=client -f $(DEPLOY_DIR)/lab2/deployment6.yaml
 	kubectl apply --dry-run=client -f $(DEPLOY_DIR)/lab3/deployment7.yaml
 	kubectl apply --dry-run=client -f $(DEPLOY_DIR)/lab3/deployment8.yaml
-	kubectl apply --dry-run=client -f $(DEPLOY_DIR)/lab4/deployment9.yaml
+
+deploy-labs: namespace create-private-registry-secret load-kyverno load-app-image
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab1/kyverno-policy.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab1/deployment1.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab1/deployment2.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab1/deployment3.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab2/deployment4.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab2/deployment5.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab2/deployment6.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab3/deployment7.yaml
+	$(KUBECTL) apply -f $(DEPLOY_DIR)/lab4/deployment8.yaml
+
+clean-labs: clean-lab1 clean-lab2 clean-lab3 clean-lab4
+	@echo Done
 
 clean:
 	$(KIND) delete cluster --name $(CLUSTER_NAME) || :
