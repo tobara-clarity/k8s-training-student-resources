@@ -1,0 +1,17 @@
+####################################################################
+# THIS IS AN EXAMPLE ENCRYPTION CONFIGURATION WITH AN EXPOSED KEY
+#
+# DO NOT USE IN ANY CONTEXT OUTSIDE OF THIS DEMONSTRATION
+####################################################################
+---
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+  - resources:
+      - secrets
+    providers:
+      - aescbc:
+          keys:
+            - name: key1
+              secret: 0mExWkr4fm04x2IVHzmwa93Lub4WWd9OkL2jGaDi6II=
+      - identity: {}

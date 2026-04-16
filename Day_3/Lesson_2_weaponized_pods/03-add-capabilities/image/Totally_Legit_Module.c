@@ -7,12 +7,12 @@ MODULE_AUTHOR("Ryan Schaaf");
 MODULE_DESCRIPTION("Kernel module to demonstrate weaponizing a pod using misconfigured capabiltiies");
 
 static int __init mod_init(void) {
-  printk(KERN_INFO "[+] Module Loaded\n");
+  printk(KERN_INFO "[+] Ryan's Totally Legit Module Loaded\n");
   return 0;
 }
 
 static void __exit mod_exit(void) {
-  printk(KERN_INFO "[-] Module Unloaded\n");
+  printk(KERN_INFO "[-] Ryan's Totally Legit Module Unloaded\n");
 }
 
 module_init(mod_init);
