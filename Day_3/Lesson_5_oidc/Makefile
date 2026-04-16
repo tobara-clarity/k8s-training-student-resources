@@ -118,15 +118,20 @@ relax-http-realms:
 		-s sslRequired=NONE >/dev/null
 
 urls:
-	@echo "APP_URL=$(APP_URL)"
-	@echo "BROKER_ALIAS=$(BROKER_ALIAS)"
-	@echo "KEYCLOAK_URL=$(KEYCLOAK_URL)"
-	@echo "POST_LOGOUT_REDIRECT_URI=$(POST_LOGOUT_REDIRECT_URI)"
-	@echo "PUBLIC_IP=$(PUBLIC_IP)"
-	@echo "REDIRECT_URI=$(REDIRECT_URI)"
-	@echo "UPSTREAM_KEYCLOAK_URL=$(UPSTREAM_KEYCLOAK_URL)"
-	@echo "UPSTREAM_SAML_METADATA_URL=$(UPSTREAM_SAML_METADATA_URL)"
-	@echo "BROKER_SP_METADATA_URL=$(BROKER_SP_METADATA_URL)"
+	@echo "PUBLIC_IP: $(PUBLIC_IP)"
+	@echo ""
+	@echo "==BASE URLS=="
+	@echo "APP_URL: $(APP_URL)"
+	@echo "KEYCLOAK_URL: $(KEYCLOAK_URL)"
+	@echo "UPSTREAM_KEYCLOAK_URL: $(UPSTREAM_KEYCLOAK_URL)"
+	@echo ""
+	@echo "==Client Registration=="
+	@echo "REDIRECT_URI: $(REDIRECT_URI)"
+	@echo "POST_LOGOUT_REDIRECT_URI: $(POST_LOGOUT_REDIRECT_URI)"
+	@echo ""
+	@echo "==SAML=="
+	@echo "UPSTREAM_SAML_METADATA_URL: $(UPSTREAM_SAML_METADATA_URL)"
+	@echo "BROKER_SP_METADATA_URL: $(BROKER_SP_METADATA_URL)"
 
 clean:
 	kind delete cluster --name training || :

@@ -2,7 +2,6 @@
 
 Create a local `kind` cluster with:
 
-* Cilium as the CNI and Gateway API controller
 * a broker Keycloak running in HTTP dev mode for the app-facing OIDC flow
 * a second Keycloak acting as the upstream SAML Identity Provider
 * a tiny upstream app (`hashicorp/http-echo`)
@@ -43,9 +42,9 @@ make deploy
 
 That creates the `kind` cluster, installs the Gateway API CRDs, installs Cilium with Gateway API enabled, and deploys Keycloak plus the upstream echo app.
 
-When `PUBLIC_IP` points at a public EC2 address, `make deploy` also relaxes Keycloak's realm SSL requirement for this training setup. Without that, Keycloak allows plain HTTP for localhost-style access but shows `HTTPS required` for external browser access.
+When `PUBLIC_IP` points at a public address, `make deploy` also relaxes Keycloak's realm SSL requirement for this training setup. Without that, Keycloak allows plain HTTP for localhost-style access but shows `HTTPS required` for external browser access.
 
-The seeded credentials and starting state are:
+The credentials are:
 
 * Broker Keycloak admin: `admin / admin123admin`
 * Upstream Keycloak admin: `admin / admin123admin`
@@ -55,81 +54,83 @@ The seeded credentials and starting state are:
 ## Create The Broker OIDC Client
 
 1. Run `make urls` and use the printed `KEYCLOAK_URL`.
-2. Open that broker Keycloak URL and sign in as `admin`.
-3. Switch from the `master` realm to the `training` realm.
+2. Open that broker Keycloak URL and sign in as `admin / admin123admin`.
+3. Switch realms by clicking `Manage realms` and selecting the `training` realm.
 4. Create a new client with these settings:
    * Client type: `OpenID Connect`
-   * Client ID: `training-app`
+   * Client ID: `training-app` and click Next
    * Client authentication: `On`
-   * Authorization: `Off`
    * Standard flow: `On`
-   * Direct access grants: `Off`
-5. In the client settings, set the values printed by `make urls`:
+   * Leave the rest unchecked
+5. Click Next
+6. In the client settings, set the values printed by `make urls`:
    * Valid redirect URIs: `REDIRECT_URI`
    * Valid post logout redirect URIs: `POST_LOGOUT_REDIRECT_URI`
    * Web origins: `APP_URL`
-6. Save the client and copy the generated client secret from the `Credentials` tab.
+7. Save the client and copy the generated client secret from the `Credentials` tab.
+   * Note: it is not https, so your brower may prevent the copy button from working, highlight and ctl + c
 
-If you later change `PUBLIC_IP`, come back and update these client settings to the new values from `make urls`.
+## Deploy the Protected App
 
-## Configure The Broker To Use The Upstream SAML IdP
-
-Run `make urls` and keep these values handy:
-
-* `BROKER_ALIAS`
-* `UPSTREAM_SAML_METADATA_URL`
-* `BROKER_SP_METADATA_URL`
-
-### In The Broker Keycloak
-
-1. Stay in the `training` realm on `KEYCLOAK_URL`.
-2. Open `Identity Providers`.
-3. Add a new provider of type `SAML v2.0`.
-4. Set the alias to the exact value printed as `BROKER_ALIAS`.
-5. Import the upstream IdP metadata from `UPSTREAM_SAML_METADATA_URL`.
-6. Save the provider.
-
-At this point the broker knows about the upstream IdP, but the upstream IdP does not yet trust the broker as a SAML Service Provider.
-
-### In The Upstream Keycloak
-
-1. Open `UPSTREAM_KEYCLOAK_URL` and sign in as `admin`.
-2. Switch from the `master` realm to the `upstream` realm.
-3. Create a new client with type `SAML`.
-4. Import the broker's SAML Service Provider metadata from `BROKER_SP_METADATA_URL`.
-5. Save the imported client.
-
-This gives the upstream IdP a SAML client entry for the broker realm.
-
-### Optional But Recommended Mapper Check
-
-For a smoother first-broker-login experience, make sure the upstream SAML assertions include user profile attributes such as username and email. If your imported SAML client does not already expose them, add protocol mappers in the upstream Keycloak before testing the flow.
-
-## Non-Interactive Validation Script
-
-To run the full setup without UI clicks (OIDC client, broker SAML IdP, upstream SAML client import, mapper wiring, client secret injection, and app deploy), run:
-
-```bash
-./setup-saml-and-client.sh
-```
-
-You can override defaults with environment variables, for example:
-
-```bash
-PUBLIC_IP=1.2.3.4 DEPLOY_APP=false ./setup-saml-and-client.sh
-```
-
-## Configure And Launch The Protected App
+Use this Client Secret to wire into the application. It will use this secret when performing the OIDC flow.
 
 ```bash
 make configure-client CLIENT_SECRET='paste-the-secret-here'
 make deploy-app
 ```
 
-Then open the printed `APP_URL`.
+Now an application is deploying and being fronted by `oauth2-proxy`. While this deploys, lets get users from the upstream SAML IdP setup.
 
-`oauth2-proxy` sends the browser to the broker realm with `kc_idp_hint=upstream-saml`, so once the SAML IdP is configured the login flow should jump straight to the upstream Keycloak.
+## Configure The Broker To Use The Upstream SAML IdP
 
-Sign in there as `student / studentpassword`, and then land on the echo app behind `oauth2-proxy`.
+### In The Broker Keycloak
 
-If login drops you back on the broker with an account-linking or missing-profile error, inspect the upstream SAML client and broker IdP mapper settings first. The app-facing broker realm still has no local password users, so the intended path is always through the upstream SAML IdP.
+1. Stay in the `training` realm on `KEYCLOAK_URL`.
+2. Open `Identity Providers`.
+3. Add a new provider of type `SAML v2.0`.
+4. Set the alias to the exact value printed as `upstream-saml`.
+5. Set the SAML entity descriptor to `UPSTREAM_SAML_METADATA_URL` (make sure this turns green and `Show metadata` fills out information from the metadata)
+6. Save the provider.
+7. In the settings for the new IdP, make sure you check `Trust Email` and click `Save`
+
+Add some mappers for accepting the upstream credentials and mapping them into our broker realm.
+
+1. Within the `Identity Providers` page, click the `upstream-saml` provider.
+2. Click `Mappers`.
+3. Click `Add mapper`
+4. Create and save a username entry
+   Name: `username-template`
+   Mapper type: `User Template Importer`
+   Template: `${ATTRIBUTE.username}`
+5. For each of {`email`, `firstName`, `lastName`} create a new mapper
+   Name: `email`
+   Mapper type: `Attribute Importer`
+   Attribute name: `email` 
+   Name Format: `Attritube_FORMAT_BASIC`
+   User Attribute Name: `email`
+
+At this point the broker knows about the upstream IdP, but the upstream IdP does not yet trust the broker as a SAML Service Provider.
+
+### In The Upstream Keycloak
+
+1. Open your browser or curl to `BROKER_SP_METADATA_URL` to retrieve the SAML metadata for the broker realm. Save the XML to a file.
+2. Open `UPSTREAM_KEYCLOAK_URL` and sign in as `admin`.
+3. Switch from the `master` realm to the `upstream` realm.
+4. Click on `Clients` and click `Import client`.
+5. Upload the XML as the `Resource File` and `Save`.
+3. Navigate to `Client Scopes` and click the keycloak entry.
+4. Verify that mappers are created in the attribute mappings. There are likely 3 (lastName, firstName, email)
+5. Click `Add mapper` and `By Configuration` and `User Property`
+6. Fill out all blank fields with `username` and save (mapper type is User Property, and Basic nameformat)
+6. Set the name to `kc_idp_hint`
+5. Save the imported client.
+
+This gives the upstream IdP a SAML client entry for the broker realm.
+
+## Test a Login
+
+Navigate to `APP_URL`. You should see a keycloak login page. Login with the `student / studentpassword` credentials.
+
+You are succeful if you see a `You made it through the Keycloak OIDC login flow.` message and a redirect back to the app URL.
+
+You might be interested to look at the `Users` section of the keycloak UI and observe the mapped user in Keycloak.
