@@ -1,0 +1,20 @@
+---
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ./enc.yaml
+        containerPath: /etc/kubernetes/enc/enc.yaml
+        readOnly: true
+    kubeadmConfigPatches:
+      - |
+        kind: ClusterConfiguration
+        apiServer:
+          extraVolumes:
+            - name: enc
+              hostPath: /etc/kubernetes/enc
+              mountPath: /etc/kubernetes/enc
+              readOnly: true
+          extraArgs:
+            encryption-provider-config: /etc/kubernetes/enc/enc.yaml
