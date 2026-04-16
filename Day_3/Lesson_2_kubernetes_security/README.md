@@ -44,19 +44,6 @@ kubectl apply -f manifests/01-rbac-role.yaml
 kubectl apply -f manifests/02-rbac-rolebinding.yaml
 ```
 
-Verify all three exist:
-
-```bash
-kubectl get serviceaccount lab-viewer
-```
-
-```bash
-kubectl get role pod-reader
-```
-
-```bash
-kubectl get rolebinding read-pods-binding
-```
 
 ### Part 3: Test Permissions from Outside the Pod
 
@@ -101,9 +88,6 @@ work the same way from inside the cluster:
 kubectl apply -f manifests/04-test-pod.yaml
 ```
 
-```bash
-kubectl wait --for=condition=Ready pod/rbac-test-pod --timeout=60s
-```
 
 ```bash
 kubectl exec -it rbac-test-pod -- sh
@@ -113,10 +97,6 @@ Run these commands **inside the pod**:
 
 ```bash
 kubectl get pods
-```
-
-```bash
-kubectl logs rbac-test-pod
 ```
 
 These should all fail with "Forbidden":
@@ -306,10 +286,6 @@ kubectl apply -f manifests/08-secret-consumer-pod.yaml
 ```
 
 ```bash
-kubectl wait --for=condition=Ready pod/secret-consumer --timeout=60s
-```
-
-```bash
 kubectl exec -it secret-consumer -- sh
 ```
 
@@ -406,10 +382,6 @@ kubectl apply -f manifests/11-server-pod.yaml
 kubectl apply -f manifests/12-client-pod.yaml
 ```
 
-```bash
-kubectl wait --for=condition=Ready pod/server-pod pod/client-pod --timeout=60s
-```
-
 Get the server pod's IP:
 
 ```bash
@@ -482,10 +454,6 @@ Deploy a pod WITHOUT the `role=client` label:
 kubectl run rogue-pod --image=curlimages/curl:latest --command -- sleep 3600
 ```
 
-```bash
-kubectl wait --for=condition=Ready pod/rogue-pod --timeout=60s
-```
-
 Try to reach the server from the unlabeled pod:
 
 ```bash
@@ -549,10 +517,6 @@ Deploy it and verify it runs:
 
 ```bash
 kubectl apply -f manifests/13-security-context-pod.yaml
-```
-
-```bash
-kubectl wait --for=condition=Ready pod/security-context-demo --timeout=60s
 ```
 
 Verify the process is running as UID 1000, not root:
