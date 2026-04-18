@@ -659,7 +659,7 @@ Note: /proc/1/ is the file system of the target container you're debugging.
 Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".
 ```
 
-This reveals interesting information, go to ### Setting the environment variable
+This reveals interesting information, go to [Setting the environment variable](#Setting-the-environment-variable).
 
 ### Approach 2 - Use copy-to to copy the contents out to a debug pod
 
@@ -688,7 +688,7 @@ log.txt
 Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".Missing or incorrect value for required variable REQUIRED_ENV4. Set it to "true".
 ```
 
-This reveals interesting information, go to ### Setting the environment variable
+This reveals interesting information, go to [Setting the environment variable](#Setting-the-environment-variable).
 
 #### Approach 2.1 - Directly browse the filesystem
 
