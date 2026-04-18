@@ -266,7 +266,141 @@ the deployment does not reveal anything useful.
 
 Looking at the logs for the pod, so the following:
 
+```
+During handling of the above exception, another exception occurred:
 
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+  File "/usr/local/lib/python3.11/urllib/request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/urllib/request.py", line 519, in open
+    response = self._open(req, data)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/urllib/request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/urllib/request.py", line 496, in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/urllib/request.py", line 1391, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/urllib/request.py", line 1351, in do_open
+    raise URLError(err)
+urllib.error.URLError: <urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1016)>
+```
+
+We can see a cert error here, if we describe the deployment we can get
+a better idea of what it is trying to talk to.
+
+```
+    Command:
+      python
+      -c
+      import time
+      import urllib.request
+
+      while True:
+        with urllib.request.urlopen(
+            "https://service5.debugging.svc.cluster.local",
+            timeout=5,
+        ) as response:
+            print(response.read().decode())
+
+        time.sleep(8)
+
+    Environment:
+```
+
+Here we can see it is trying to connect to services5 in the debugging
+namespace. If we describe the service5 deployment, we can see it is using
+a secret, service5-tls, mounted into the pod to act as its certificate.
+
+```
+    Command:
+      python
+      -c
+      import http.server
+      import ssl
+
+      class Handler(http.server.BaseHTTPRequestHandler):
+          def do_GET(self):
+              self.send_response(200)
+              self.end_headers()
+              self.wfile.write(b"ok\n")
+
+      httpd = http.server.ThreadingHTTPServer(("0.0.0.0", 8443), Handler)
+      context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+      context.load_cert_chain("/tls/tls.crt", "/tls/tls.key")
+      httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+      httpd.serve_forever()
+
+    Environment:  <none>
+    Mounts:
+      /tls from tls (ro)
+  Volumes:
+   tls:
+    Type:          Secret (a volume populated by a Secret)
+    SecretName:    service5-tls
+    Optional:      false
+```
+
+If we grab the secrets, we can see a deployment5-ca, which we can guess
+may be the CA that signed this certificate. If you don't want to make this
+assumption, you could use openssl to verify this.
+
+To add this CA to deployment5, it is a secret, so we can mount that secret
+in as a file. To do that, edit your deployment5.yaml file.
+
+```
+...
+        volumeMounts:
+        - mountPath: /etc/ssl/certs/ca-bundle.crt
+          name: ca-bundle
+          readOnly: true
+          subPath: ca-certificates.crt
+...
+      volumes:
+      - name: ca-bundle
+        secret:
+          defaultMode: 292
+          secretName: deployment5-ca
+...
+```
+
+You must add a volume under "volumes" matching the secret, and then mount
+that volume into the container. Note, that because I mounted into an existing
+directory and I just want to mount a specific file, it's important to use
+"subPath", which will result in the "ca-certificates.crt" value from the
+secret being placed at the file "/etc/ssl/certs/ca-bundle.crt"
+
+After the CA is inside the container, you need to have your software use it,
+to do this, update the python to add the SSL context.
+
+```
+          command:
+            - python
+            - -c
+            - |
+              import time
+              import urllib.request
+
+              ctx = ssl.create_default_context(cafile="/etc/ssl/certs/ca-bundle.crt")
+
+              while True:
+                with urllib.request.urlopen(
+                    "https://service5.debugging.svc.cluster.local",
+                    timeout=5,
+                    context=ctx,
+                ) as response:
+                    print(response.read().decode())
+
+                time.sleep(8)
+```
+
+After that, the deployment will restart and you should start seeing "ok" in the
+logs.
 
 ## Deployment 6
 
